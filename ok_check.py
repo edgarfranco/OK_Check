@@ -108,26 +108,38 @@ for row in batch_to_process:
     try:
         driver.get(url)
 
-        # ESPERA INTELIGENTE: Espera hasta 2 segundos a que aparezca el error.
-        # Si aparece antes, sigue de inmediato. Si no aparece en 2s, asume que está OK.
-        
+        # ESPERA DE CARRERA: Espera hasta x segundos a que aparezca 
+        # el mensaje de error O el título del video.
         try:
-            stub_element = WebDriverWait(driver, 2).until(
-                EC.presence_of_element_located((By.CLASS_NAME, 'vp_video_stub_txt'))
+            # El selector CSS coma (,) funciona como un "OR"
+            elemento_detectado = WebDriverWait(driver, 2).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, ".vp_video_stub_txt, .vid-card_n"))
             )
-            stext_ru = stub_element.text
-            status_map = {
-                "Видео заблокировано из-за нарушений авторских прав": "Bloqueado: Copyright",
-                "Видео заблокировано": "Bloqueado: General",
-                "Видео не найдено": "Eliminado: No encontrado",
-                "Автор данного видео не найден или заблокирован": "Bloqueado: Autor"
-            }
-            status_db = status_map.get(stext_ru, f"{stext_ru[:20]}")
-            status_log = f"DEAD ({status_db})"
+            
+            # Verificamos qué clase tiene el elemento que ganó la carrera
+            clase_encontrada = elemento_detectado.get_attribute("class")
+            
+            if "vp_video_stub_txt" in clase_encontrada:
+                # El video está BLOQUEADO
+                stext_ru = elemento_detectado.text
+                status_map = {
+                    "Видео заблокировано из-за нарушений авторских прав": "Bloqueado: Copyright",
+                    "Видео заблокировано": "Bloqueado: General",
+                    "Видео не найдено": "Eliminado: No encontrado",
+                    "Автор данного видео не найден или заблокирован": "Bloqueado: Autor"
+                }
+                status_db = status_map.get(stext_ru, f"{stext_ru[:20]}")
+                status_log = f"DEAD ({status_db})"
+            else:
+                # El video está ALIVE (se encontró .vid-card_n)
+                status_db = ""
+                status_log = "OK"
+                
         except:
-            # Si en 2 segundos no apareció el stub, se asume que el video está ALIVE
+            # Si en 3 segundos no aparece ninguno, podría ser un error de carga 
+            # o un tercer estado. Lo marcamos como ALIVE por defecto o Error de carga.
             status_db = ""
-            status_log = "OK"
+            status_log = "Timeout"
         
         # Guardar en el buffer (siempre, para actualizar la fecha)
         results_buffer.append((status_db, get_curdate_time(), curr_id))
