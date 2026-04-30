@@ -134,18 +134,18 @@ for row in batch:
                 "Автор данного видео не найден или заблокирован": "Bloqueado: Autor",
                 "Видео не найдено": "Eliminado: No encontrado"
             }
-            status_db = status_map.get(stext_ru, f"Error: {stext_ru[:20]}")
-            status_log = f"DEAD ({status_db})"
-            logging.info(f"ID {curr_id} -> {status_db}")
+            status_db = status_map.get(stext_ru, f"{stext_ru[:20]}")
+            status_log = f"{status_db}" 
+            logging.info(f"ID {curr_id} detectado como {status_db}")
         
-        # ACTUALIZACIÓN EN DB: Siempre actualizamos estado (vacío o causa) y FECHA de Colombia
+        # ACTUALIZACIÓN EN DB: Siempre enviamos el ID, el estado (vacío o error) y la fecha se genera dentro
         update_video_status(curr_id, status_db)
         
-        # Actualizar el punto de control
+        # Actualizar el punto de control para la siguiente tanda
         update_checkpoint(curr_id)
         
-        # Print detallado para los logs de GitHub
-        print(f"ID: {curr_id} | Status: {status_log} | Title: {titulo}... | Time: {get_curdate_time()}")
+        # Print detallado para GitHub Actions
+        print(f"ID: {curr_id} | {get_curdate_time()} | Status: {status_log} | Title: {titulo} ")
 
     except Exception as e:
         print(f"Error procesando ID {curr_id}: {str(e)[:50]}")
