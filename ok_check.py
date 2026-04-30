@@ -84,7 +84,7 @@ if last_id == 0:
 # 2. Consultar lote de 100 videos (Descendente)
 conn = get_db_connection()
 cursor = conn.cursor(dictionary=True)
-sql = "SELECT id, idok, titulo FROM videos2024 WHERE id < %s AND estado = '' ORDER BY id DESC LIMIT 100"
+sql = "SELECT id, idok, titulo FROM videos2024 WHERE id < %s AND estado = '' ORDER BY id DESC LIMIT 200"
 cursor.execute(sql, (last_id,))
 batch = cursor.fetchall()
 cursor.close()
