@@ -9,6 +9,8 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 # --- CONFIGURACIÓN ---
 DB_CONFIG = {
@@ -105,11 +107,15 @@ for row in batch_to_process:
     
     try:
         driver.get(url)
-        # time.sleep(3) # Tiempo de carga de la página
+
+        # ESPERA INTELIGENTE: Espera hasta 2 segundos a que aparezca el error.
+        # Si aparece antes, sigue de inmediato. Si no aparece en 2s, asume que está OK.
         
-        stubs = driver.find_elements(By.CLASS_NAME, 'vp_video_stub_txt')
-        if stubs:
-            stext_ru = stubs[0].text
+        try:
+            stub_element = WebDriverWait(driver, 2).until(
+                EC.presence_of_element_located((By.CLASS_NAME, 'vp_video_stub_txt'))
+            )
+            stext_ru = stub_element.text
             status_map = {
                 "Видео заблокировано из-за нарушений авторских прав": "Bloqueado: Copyright",
                 "Видео заблокировано": "Bloqueado: General",
@@ -117,7 +123,11 @@ for row in batch_to_process:
                 "Автор данного видео не найден или заблокирован": "Bloqueado: Autor"
             }
             status_db = status_map.get(stext_ru, f"{stext_ru[:20]}")
-            status_log = f"{status_db}"
+            status_log = f"DEAD ({status_db})"
+        except:
+            # Si en 2 segundos no apareció el stub, se asume que el video está ALIVE
+            status_db = ""
+            status_log = "OK"
         
         # Guardar en el buffer (siempre, para actualizar la fecha)
         results_buffer.append((status_db, get_curdate_time(), curr_id))
