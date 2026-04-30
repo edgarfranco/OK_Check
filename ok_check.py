@@ -123,7 +123,7 @@ for row in batch_to_process:
         results_buffer.append((status_db, get_curdate_time(), curr_id))
         processed_count += 1
         
-        print(f"ID: {curr_id} | {get_curdate_time()} | Status: {status_log} | Title: {titulo} ")
+        print(f"ID: {curr_id} | {get_curdate_time()} | Status: {status_log} ")
 
         # ¿Es momento de sincronizar con la DB?
         if len(results_buffer) >= BATCH_SIZE:
