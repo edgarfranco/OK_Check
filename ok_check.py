@@ -134,7 +134,7 @@ for row in batch:
                 "Автор данного видео не найден или заблокирован": "Bloqueado: Autor",
                 "Видео не найдено": "Eliminado: No encontrado"
             }
-            status_db = status_map.get(stext_ru, f"{stext_ru[:20]}")
+            status_db = status_map.get(stext_ru, f"{stext_ru[:50]}")
             status_log = f"{status_db}" 
             logging.info(f"ID {curr_id} detectado como {status_db}")
         
