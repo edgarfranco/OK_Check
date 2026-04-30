@@ -137,7 +137,7 @@ for row in batch:
         update_checkpoint(curr_id)
         
         # Print detallado para GitHub Actions
-        print(f"ID: {curr_id} | {get_curdate_time()} | Status: {status_log} | Title: {titulo}... ")
+        print(f"ID: {curr_id} | {get_curdate_time()} | Status: {status_log} | Title: {titulo} ")
 
     except Exception as e:
         print(f"Error procesando ID {curr_id}: {str(e)[:50]}")
