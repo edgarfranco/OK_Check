@@ -21,8 +21,7 @@ DB_CONFIG = {
     'connection_timeout': 30
 }
 
-# Tamaño del lote de actualización (Cada cuántos videos escribimos en la DB)
-BATCH_SIZE = 10 
+BATCH_SIZE = 20 # Sincronizamos con la DB cada 20 videos procesados
 
 logging.basicConfig(filename="OK_Check.log", level=logging.INFO, format="%(asctime)s: %(message)s", encoding='utf-8')
 
@@ -41,37 +40,44 @@ def get_config_value(key):
     conn.close()
     return result['valor'] if result else None
 
-def commit_batch(results_list, last_id):
-    """Envía todos los resultados acumulados a la DB en una sola conexión"""
+def commit_batch(results_list, last_id_to_save):
+    """
+    Sincronización selectiva:
+    - Actualiza videos2024 SOLO si el estado no es vacío.
+    - Actualiza config SIEMPRE para avanzar el puntero.
+    """
     if not results_list:
         return
+    
+    # Filtramos: Solo registros que tengan un estado detectado (Bloqueados)
+    bloqueados = [r for r in results_list if r[0] != ""]
     
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # 1. Actualización masiva de videos usando executemany
-        sql_videos = "UPDATE videos2024 SET estado = %s, fecha = %s WHERE id = %s"
-        cursor.executemany(sql_videos, results_list)
+        # 1. ACTUALIZACIÓN SELECTIVA: Solo si hay bloqueos en esta tanda
+        if bloqueados:
+            sql_videos = "UPDATE videos2024 SET estado = %s, fecha = %s WHERE id = %s"
+            cursor.executemany(sql_videos, bloqueados)
+            print(f"--- DB: {len(bloqueados)} bloqueos registrados en esta tanda. ---")
         
-        # 2. Actualización del checkpoint
+        # 2. ACTUALIZACIÓN OBLIGATORIA: El checkpoint debe avanzar siempre
         sql_checkpoint = "UPDATE config SET valor = %s WHERE variable = 'last_id_check'"
-        cursor.execute(sql_checkpoint, (str(last_id),))
+        cursor.execute(sql_checkpoint, (str(last_id_to_save),))
         
         conn.commit()
         cursor.close()
         conn.close()
-        print(f"--- DB Sincronizada: {len(results_list)} registros actualizados. Checkpoint: {last_id} ---")
     except Exception as e:
         print(f"Error al sincronizar con la DB: {e}")
 
-# --- PROCESO PRINCIPAL ---
+# --- INICIO ---
 
 raw_id = get_config_value('last_id_check')
 last_id = int(raw_id) if raw_id is not None else 0
 limit_val = int(get_config_value('limit_check') or 100)
 
-# Obtener lote de trabajo
 conn = get_db_connection()
 cursor = conn.cursor(dictionary=True)
 sql = "SELECT id, idok, titulo FROM videos2024 WHERE id < %s AND estado = '' ORDER BY id DESC LIMIT %s"
@@ -84,7 +90,6 @@ if not batch_to_process:
     print("Nada que procesar.")
     exit()
 
-# Selenium Setup
 options = Options()
 options.add_argument('--headless')
 options.add_argument('--no-sandbox')
@@ -93,8 +98,8 @@ prefs = {"profile.managed_default_content_settings.images": 2}
 options.add_experimental_option("prefs", prefs)
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
-# --- BUCLE OPTIMIZADO ---
-results_buffer = []  # Aquí guardamos temporalmente (estado, fecha, id)
+# Buffer de memoria
+results_buffer = []
 processed_count = 0
 
 for row in batch_to_process:
@@ -103,60 +108,54 @@ for row in batch_to_process:
     url = f'https://ok.ru/videoembed/{idok}?autoplay=0&quality=lowest'
     
     status_db = ""
-    status_log = "OK"
+    status_log = "ALIVE"
     
     try:
         driver.get(url)
-
-        # ESPERA DE CARRERA: Espera hasta x segundos a que aparezca 
-        # el mensaje de error O el título del video.
+        
+        # ESPERA DE CARRERA (Race Condition)
         try:
-            # El selector CSS coma (,) funciona como un "OR"
-            elemento_detectado = WebDriverWait(driver, 2).until(
+            # Esperamos a que aparezca el error O el título del video (vid-card_n)
+            elemento = WebDriverWait(driver, 3).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, ".vp_video_stub_txt, .vid-card_n"))
             )
             
-            # Verificamos qué clase tiene el elemento que ganó la carrera
-            clase_encontrada = elemento_detectado.get_attribute("class")
+            clase = elemento.get_attribute("class")
             
-            if "vp_video_stub_txt" in clase_encontrada:
-                # El video está BLOQUEADO
-                stext_ru = elemento_detectado.text
+            if "vp_video_stub_txt" in clase:
+                stext_ru = elemento.text
                 status_map = {
                     "Видео заблокировано из-за нарушений авторских прав": "Bloqueado: Copyright",
                     "Видео заблокировано": "Bloqueado: General",
                     "Видео не найдено": "Eliminado: No encontrado",
                     "Автор данного видео не найден или заблокирован": "Bloqueado: Autor"
                 }
-                status_db = status_map.get(stext_ru, f"{stext_ru[:50]}")
+                status_db = status_map.get(stext_ru, f"{stext_ru[:20]}")
                 status_log = f"DEAD ({status_db})"
             else:
-                # El video está ALIVE (se encontró .vid-card_n)
+                # Se detectó .vid-card_n -> El video está bien
                 status_db = ""
                 status_log = "OK"
-                
         except:
-            # Si en 3 segundos no aparece ninguno, podría ser un error de carga 
-            # o un tercer estado. Lo marcamos como ALIVE por defecto o Error de carga.
+            # Si nada aparece en 3s, lo consideramos ALIVE para no marcar errores falsos
             status_db = ""
             status_log = "Timeout"
         
-        # Guardar en el buffer (siempre, para actualizar la fecha)
+        # Agregamos al buffer (se usará para filtrar después)
         results_buffer.append((status_db, get_curdate_time(), curr_id))
         processed_count += 1
         
-        print(f"ID: {curr_id} | {get_curdate_time()} | Status: {status_log} ")
+        print(f"ID: {curr_id} | {get_curdate_time()}  | {status_log}")
 
-        # ¿Es momento de sincronizar con la DB?
         if len(results_buffer) >= BATCH_SIZE:
             commit_batch(results_buffer, curr_id)
-            results_buffer = [] # Limpiar buffer después de commit
+            results_buffer = []
 
     except Exception as e:
-        print(f"Fallo en ID {curr_id}: {e}")
+        print(f"Error en ID {curr_id}: {e}")
         break
 
-# Sincronización final (para los videos restantes que no completaron un lote de 10)
+# Sincronización final
 if results_buffer:
     commit_batch(results_buffer, results_buffer[-1][2])
 
