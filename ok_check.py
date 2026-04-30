@@ -3,7 +3,7 @@ import time
 import mysql.connector
 import logging
 from datetime import datetime
-import pytz  # Para manejar la zona horaria de Colombia
+import pytz
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
@@ -27,7 +27,7 @@ def get_db_connection():
     return mysql.connector.connect(**DB_CONFIG)
 
 def get_curdate_time():
-    """Obtiene la fecha y hora actual en el formato de MySQL para Colombia"""
+    """Hora actual de Colombia"""
     tz_bogota = pytz.timezone('America/Bogota')
     return datetime.now(tz_bogota).strftime('%Y-%m-%d %H:%M:%S')
 
@@ -41,11 +41,11 @@ def get_config_value(key):
     return result['valor'] if result else None
 
 def update_video_status(video_id, estado):
-    """Actualiza el estado y la fecha/hora del bloqueo"""
+    """Actualiza estado y fecha en la base de datos"""
     fecha_colombia = get_curdate_time()
     conn = get_db_connection()
     cursor = conn.cursor()
-    # Actualizamos el estado Y la fecha
+    # SQL que actualiza ambas columnas
     sql = "UPDATE videos2024 SET estado = %s, fecha = %s WHERE id = %s"
     cursor.execute(sql, (estado, fecha_colombia, video_id))
     conn.commit()
@@ -62,7 +62,6 @@ def update_checkpoint(new_id):
 
 # --- PROCESO PRINCIPAL ---
 
-# 1. Obtener punto de control (last_id_check)
 try:
     raw_id = get_config_value('last_id_check')
     last_id = int(raw_id) if raw_id is not None else 0
@@ -70,7 +69,7 @@ except Exception as e:
     print(f"Error de conexión inicial: {e}")
     exit(1)
 
-# Si es 0 (primera vez), empezamos desde el ID más alto
+# Lógica para empezar desde arriba si last_id es 0
 if last_id == 0:
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -79,22 +78,22 @@ if last_id == 0:
     last_id = res['max_id'] + 1 if res['max_id'] else 0
     cursor.close()
     conn.close()
-    print(f"Iniciando desde el tope de la tabla: ID {last_id}")
+    print(f"--- INICIANDO DESDE EL TOPE: ID {last_id} ---")
 
-# 2. Consultar lote de 100 videos (Descendente)
+# Obtenemos los videos a procesar
 conn = get_db_connection()
 cursor = conn.cursor(dictionary=True)
-sql = "SELECT id, idok, titulo FROM videos2024 WHERE id < %s AND estado = '' ORDER BY id DESC LIMIT 200"
+sql = "SELECT id, idok, titulo FROM videos2024 WHERE id < %s AND estado = '' ORDER BY id DESC LIMIT 100"
 cursor.execute(sql, (last_id,))
 batch = cursor.fetchall()
 cursor.close()
 conn.close()
 
 if not batch:
-    print("No hay más videos para procesar en orden descendente.")
+    print("No hay videos pendientes para procesar.")
     exit()
 
-# 3. Configurar Selenium
+# Configuración Selenium
 options = Options()
 options.add_argument('--headless')
 options.add_argument('--no-sandbox')
@@ -103,39 +102,46 @@ prefs = {"profile.managed_default_content_settings.images": 2}
 options.add_experimental_option("prefs", prefs)
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
-# 4. Bucle de procesamiento
 for row in batch:
     curr_id = row["id"]
     idok = row["idok"]
+    titulo = row["titulo"][:35]
     url = f'https://ok.ru/videoembed/{idok}?autoplay=0&quality=lowest'
+    
+    # Valores por defecto para el log
+    status_db = ""        # Si está OK, el estado en DB queda vacío
+    status_log = "OK"  # Para el print de GitHub
     
     try:
         driver.get(url)
-        time.sleep(3) # Espera técnica para carga de ok.ru
+        time.sleep(3)
         
         stubs = driver.find_elements(By.CLASS_NAME, 'vp_video_stub_txt')
         if stubs:
             stext_ru = stubs[0].text
             status_map = {
-                "Видео заблокировано из-за нарушений авторских прав": "Video bloqueado por copyright",
-                "Видео заблокировано по требованию правообладателя": "Video bloqueado por copyright",
-                "Видео заблокировано": "Vídeo bloqueado",
-                "Автор данного видео не найден или заблокирован": "Autor bloqueado",
-                "Видео не найдено": "Vídeo no encontrado"
+                "Видео заблокировано из-за нарушений авторских прав": "Bloqueado: Copyright",
+                "Видео заблокировано по требованию правообладателя": "Bloqueado: Copyright",
+                "Видео заблокировано": "Bloqueado: General",
+                "Автор данного видео не найден или заблокирован": "Bloqueado: Autor",
+                "Видео не найдено": "Eliminado: No encontrado"
             }
-            estado = status_map.get(stext_ru, stext_ru[:45])
-            
-            # ACTUALIZACIÓN: Estado + Fecha de Colombia
-            update_video_status(curr_id, estado)
-            logging.info(f"ID {curr_id} BLOQUEADO: {estado} (Fecha registrada)")
+            status_db = status_map.get(stext_ru, f"{stext_ru[:20]}")
+            status_log = f"{status_db}" 
+            logging.info(f"ID {curr_id} detectado como {status_db}")
         
-        # Guardamos el progreso ID por ID para evitar perder el hilo si hay error
+        # ACTUALIZACIÓN EN DB: Siempre enviamos el ID, el estado (vacío o error) y la fecha se genera dentro
+        update_video_status(curr_id, status_db)
+        
+        # Actualizar el punto de control para la siguiente tanda
         update_checkpoint(curr_id)
-        print(f"Procesado ID: {curr_id} (Fecha: {get_curdate_time()})")
+        
+        # Print detallado para GitHub Actions
+        print(f"ID: {curr_id} | {get_curdate_time()} | Status: {status_log} | Title: {titulo}... ")
 
     except Exception as e:
-        print(f"Error en ID {curr_id}: {e}")
+        print(f"Error procesando ID {curr_id}: {str(e)[:50]}")
         break 
 
 driver.quit()
-print("Proceso completado exitosamente.")
+print("--- TANDA DESCENDENTE FINALIZADA CON ÉXITO ---")
