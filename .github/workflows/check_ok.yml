@@ -24,7 +24,7 @@ jobs:
       - name: 2. Configurar el entorno de Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.14'
           cache: 'pip' # Acelera las ejecuciones guardando las librerías
 
       - name: 3. Instalar librerías necesarias
