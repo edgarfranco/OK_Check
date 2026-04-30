@@ -14,47 +14,72 @@ DB_CONFIG = {
     'user': os.getenv('DB_USER'),
     'password': os.getenv('DB_PASS'),
     'database': os.getenv('DB_NAME'),
-    'connection_timeout': 300
+    'connection_timeout': 30
 }
 
 logging.basicConfig(filename="OK_Check.log", level=logging.INFO, format="%(asctime)s: %(message)s", encoding='utf-8')
 
-def connectDB():
+# Función para obtener una nueva conexión limpia
+def get_db_connection():
     return mysql.connector.connect(**DB_CONFIG)
 
-def get_config_value(cursor, key):
+def get_config_value(key):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
     cursor.execute("SELECT valor FROM config WHERE variable = %s", (key,))
     result = cursor.fetchone()
+    cursor.close()
+    conn.close()
     return result['valor'] if result else None
 
-def update_config_value(cursor, mydb, key, value):
-    cursor.execute("UPDATE config SET valor = %s WHERE variable = %s", (str(value), key))
-    mydb.commit()
+def update_video_status(video_id, estado):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE videos2024 SET estado = %s WHERE id = %s", (estado, video_id))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+def update_checkpoint(new_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE config SET valor = %s WHERE variable = 'last_id_check'", (str(new_id),))
+    conn.commit()
+    cursor.close()
+    conn.close()
 
 # --- INICIO ---
-mydb = connectDB()
-cursor = mydb.cursor(dictionary=True)
 
 # 1. Obtener punto de control
-raw_id = get_config_value(cursor, 'last_id_check')
-last_id = int(raw_id) if raw_id is not None else 0
+try:
+    raw_id = get_config_value('last_id_check')
+    last_id = int(raw_id) if raw_id is not None else 0
+except Exception as e:
+    print(f"Error al conectar inicialmente: {e}")
+    exit(1)
 
-# LÓGICA DESCENDENTE: Si last_id es 0, empezamos desde el ID más alto de la tabla
+# Si es 0, buscamos el máximo
 if last_id == 0:
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
     cursor.execute("SELECT MAX(id) as max_id FROM videos2024")
     res = cursor.fetchone()
     last_id = res['max_id'] + 1 if res['max_id'] else 0
-    print(f"Iniciando desde el tope de la tabla: ID {last_id}")
+    cursor.close()
+    conn.close()
+    print(f"Iniciando desde el tope: ID {last_id}")
 
-# 2. Consultar los 100 vídeos ANTERIORES al último procesado (ID < last_id)
+# 2. Obtener lote de videos y CERRAR conexión inmediatamente
+conn = get_db_connection()
+cursor = conn.cursor(dictionary=True)
 sql = "SELECT id, idok, titulo FROM videos2024 WHERE id < %s AND estado = '' ORDER BY id DESC LIMIT 100"
 cursor.execute(sql, (last_id,))
 batch = cursor.fetchall()
+cursor.close()
+conn.close()
 
 if not batch:
-    print("No hay vídeos más antiguos para procesar (o llegaste al final).")
-    cursor.close()
-    mydb.close()
+    print("No hay videos para procesar.")
     exit()
 
 # 3. Configurar Selenium
@@ -66,9 +91,7 @@ prefs = {"profile.managed_default_content_settings.images": 2}
 options.add_experimental_option("prefs", prefs)
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
-# IMPORTANTE: En orden descendente, el final_id será el más PEQUEÑO del lote
-final_id = last_id 
-
+# 4. Bucle de procesamiento
 for row in batch:
     curr_id = row["id"]
     idok = row["idok"]
@@ -90,24 +113,20 @@ for row in batch:
             }
             estado = status_map.get(stext_ru, stext_ru[:45])
             
-            up_cursor = mydb.cursor()
-            up_cursor.execute("UPDATE videos2024 SET estado = %s WHERE id = %s", (estado, curr_id))
-            mydb.commit()
-            up_cursor.close()
+            # Actualizamos en el momento (abre y cierra conexión)
+            update_video_status(curr_id, estado)
             logging.info(f"ID {curr_id} BLOQUEADO: {estado}")
         
-        # El progreso ahora baja
-        final_id = curr_id
+        # ACTUALIZAMOS EL CHECKPOINT VIDEO POR VIDEO
+        # Esto es más seguro: si el script falla en el video 50, 
+        # la DB ya sabe que llegó al 50.
+        update_checkpoint(curr_id)
         print(f"Procesado ID: {curr_id} (Descendiendo)")
 
     except Exception as e:
-        logging.error(f"Error en ID {curr_id}: {e}")
+        print(f"Error procesando ID {curr_id}: {e}")
+        # Si hay un error de red o Selenium, mejor parar y dejar que el cron reintente luego
         break
 
-# 4. Actualizar el checkpoint con el ID más bajo alcanzado
-update_config_value(cursor, mydb, 'last_id_check', final_id)
-
 driver.quit()
-cursor.close()
-mydb.close()
-print(f"Progreso guardado. Siguiente tanda empezará debajo de ID: {final_id}")
+print("Proceso finalizado con éxito.")
