@@ -2,6 +2,8 @@ import os
 import time
 import mysql.connector
 import logging
+from datetime import datetime
+import pytz  # Para manejar la zona horaria de Colombia
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
@@ -19,9 +21,15 @@ DB_CONFIG = {
 
 logging.basicConfig(filename="OK_Check.log", level=logging.INFO, format="%(asctime)s: %(message)s", encoding='utf-8')
 
-# Función para obtener una nueva conexión limpia
+# --- FUNCIONES DE APOYO ---
+
 def get_db_connection():
     return mysql.connector.connect(**DB_CONFIG)
+
+def get_curdate_time():
+    """Obtiene la fecha y hora actual en el formato de MySQL para Colombia"""
+    tz_bogota = pytz.timezone('America/Bogota')
+    return datetime.now(tz_bogota).strftime('%Y-%m-%d %H:%M:%S')
 
 def get_config_value(key):
     conn = get_db_connection()
@@ -33,9 +41,13 @@ def get_config_value(key):
     return result['valor'] if result else None
 
 def update_video_status(video_id, estado):
+    """Actualiza el estado y la fecha/hora del bloqueo"""
+    fecha_colombia = get_curdate_time()
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("UPDATE videos2024 SET estado = %s WHERE id = %s", (estado, video_id))
+    # Actualizamos el estado Y la fecha
+    sql = "UPDATE videos2024 SET estado = %s, fecha = %s WHERE id = %s"
+    cursor.execute(sql, (estado, fecha_colombia, video_id))
     conn.commit()
     cursor.close()
     conn.close()
@@ -48,17 +60,17 @@ def update_checkpoint(new_id):
     cursor.close()
     conn.close()
 
-# --- INICIO ---
+# --- PROCESO PRINCIPAL ---
 
-# 1. Obtener punto de control
+# 1. Obtener punto de control (last_id_check)
 try:
     raw_id = get_config_value('last_id_check')
     last_id = int(raw_id) if raw_id is not None else 0
 except Exception as e:
-    print(f"Error al conectar inicialmente: {e}")
+    print(f"Error de conexión inicial: {e}")
     exit(1)
 
-# Si es 0, buscamos el máximo
+# Si es 0 (primera vez), empezamos desde el ID más alto
 if last_id == 0:
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -67,9 +79,9 @@ if last_id == 0:
     last_id = res['max_id'] + 1 if res['max_id'] else 0
     cursor.close()
     conn.close()
-    print(f"Iniciando desde el tope: ID {last_id}")
+    print(f"Iniciando desde el tope de la tabla: ID {last_id}")
 
-# 2. Obtener lote de videos y CERRAR conexión inmediatamente
+# 2. Consultar lote de 100 videos (Descendente)
 conn = get_db_connection()
 cursor = conn.cursor(dictionary=True)
 sql = "SELECT id, idok, titulo FROM videos2024 WHERE id < %s AND estado = '' ORDER BY id DESC LIMIT 100"
@@ -79,7 +91,7 @@ cursor.close()
 conn.close()
 
 if not batch:
-    print("No hay videos para procesar.")
+    print("No hay más videos para procesar en orden descendente.")
     exit()
 
 # 3. Configurar Selenium
@@ -99,7 +111,7 @@ for row in batch:
     
     try:
         driver.get(url)
-        time.sleep(3)
+        time.sleep(3) # Espera técnica para carga de ok.ru
         
         stubs = driver.find_elements(By.CLASS_NAME, 'vp_video_stub_txt')
         if stubs:
@@ -113,20 +125,17 @@ for row in batch:
             }
             estado = status_map.get(stext_ru, stext_ru[:45])
             
-            # Actualizamos en el momento (abre y cierra conexión)
+            # ACTUALIZACIÓN: Estado + Fecha de Colombia
             update_video_status(curr_id, estado)
-            logging.info(f"ID {curr_id} BLOQUEADO: {estado}")
+            logging.info(f"ID {curr_id} BLOQUEADO: {estado} (Fecha registrada)")
         
-        # ACTUALIZAMOS EL CHECKPOINT VIDEO POR VIDEO
-        # Esto es más seguro: si el script falla en el video 50, 
-        # la DB ya sabe que llegó al 50.
+        # Guardamos el progreso ID por ID para evitar perder el hilo si hay error
         update_checkpoint(curr_id)
-        print(f"Procesado ID: {curr_id} (Descendiendo)")
+        print(f"Procesado ID: {curr_id} (Fecha: {get_curdate_time()})")
 
     except Exception as e:
-        print(f"Error procesando ID {curr_id}: {e}")
-        # Si hay un error de red o Selenium, mejor parar y dejar que el cron reintente luego
-        break
+        print(f"Error en ID {curr_id}: {e}")
+        break 
 
 driver.quit()
-print("Proceso finalizado con éxito.")
+print("Proceso completado exitosamente.")
