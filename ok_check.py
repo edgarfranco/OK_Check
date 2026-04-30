@@ -19,20 +19,18 @@ DB_CONFIG = {
     'connection_timeout': 30
 }
 
-logging.basicConfig(filename="OK_Check.log", level=logging.INFO, format="%(asctime)s: %(message)s", encoding='utf-8')
+# Tamaño del lote de actualización (Cada cuántos videos escribimos en la DB)
+BATCH_SIZE = 10 
 
-# --- FUNCIONES DE APOYO ---
+logging.basicConfig(filename="OK_Check.log", level=logging.INFO, format="%(asctime)s: %(message)s", encoding='utf-8')
 
 def get_db_connection():
     return mysql.connector.connect(**DB_CONFIG)
 
 def get_curdate_time():
-    """Hora actual de Colombia"""
-    tz_bogota = pytz.timezone('America/Bogota')
-    return datetime.now(tz_bogota).strftime('%Y-%m-%d %H:%M:%S')
+    return datetime.now(pytz.timezone('America/Bogota')).strftime('%Y-%m-%d %H:%M:%S')
 
 def get_config_value(key):
-    """Obtiene un valor de la tabla config"""
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     cursor.execute("SELECT valor FROM config WHERE variable = %s", (key,))
@@ -41,67 +39,50 @@ def get_config_value(key):
     conn.close()
     return result['valor'] if result else None
 
-def update_video_status(video_id, estado):
-    """Actualiza estado y fecha de Colombia en la base de datos"""
-    fecha_colombia = get_curdate_time()
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    sql = "UPDATE videos2024 SET estado = %s, fecha = %s WHERE id = %s"
-    cursor.execute(sql, (estado, fecha_colombia, video_id))
-    conn.commit()
-    cursor.close()
-    conn.close()
-
-def update_checkpoint(new_id):
-    """Actualiza el last_id_check en la tabla config"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("UPDATE config SET valor = %s WHERE variable = 'last_id_check'", (str(new_id),))
-    conn.commit()
-    cursor.close()
-    conn.close()
+def commit_batch(results_list, last_id):
+    """Envía todos los resultados acumulados a la DB en una sola conexión"""
+    if not results_list:
+        return
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # 1. Actualización masiva de videos usando executemany
+        sql_videos = "UPDATE videos2024 SET estado = %s, fecha = %s WHERE id = %s"
+        cursor.executemany(sql_videos, results_list)
+        
+        # 2. Actualización del checkpoint
+        sql_checkpoint = "UPDATE config SET valor = %s WHERE variable = 'last_id_check'"
+        cursor.execute(sql_checkpoint, (str(last_id),))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        print(f"--- DB Sincronizada: {len(results_list)} registros actualizados. Checkpoint: {last_id} ---")
+    except Exception as e:
+        print(f"Error al sincronizar con la DB: {e}")
 
 # --- PROCESO PRINCIPAL ---
 
-try:
-    # 1. Obtener parámetros de la tabla 'config'
-    raw_id = get_config_value('last_id_check')
-    last_id = int(raw_id) if raw_id is not None else 0
-    
-    raw_limit = get_config_value('limit_check')
-    limit_val = int(raw_limit) if raw_limit is not None else 100 # Default a 100 si no existe
-    
-    print(f"--- Lote configurado: {limit_val} videos ---")
-except Exception as e:
-    print(f"Error al obtener configuración inicial: {e}")
-    exit(1)
+raw_id = get_config_value('last_id_check')
+last_id = int(raw_id) if raw_id is not None else 0
+limit_val = int(get_config_value('limit_check') or 100)
 
-# Lógica para empezar desde arriba si es la primera vez
-if last_id == 0:
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT MAX(id) as max_id FROM videos2024")
-    res = cursor.fetchone()
-    last_id = res['max_id'] + 1 if res['max_id'] else 0
-    cursor.close()
-    conn.close()
-    print(f"--- INICIANDO DESDE EL TOPE: ID {last_id} ---")
-
-# 2. Consultar videos usando el LIMIT parametrizado
+# Obtener lote de trabajo
 conn = get_db_connection()
 cursor = conn.cursor(dictionary=True)
-# Usamos el valor de limit_val obtenido de la DB
 sql = "SELECT id, idok, titulo FROM videos2024 WHERE id < %s AND estado = '' ORDER BY id DESC LIMIT %s"
 cursor.execute(sql, (last_id, limit_val))
-batch = cursor.fetchall()
+batch_to_process = cursor.fetchall()
 cursor.close()
 conn.close()
 
-if not batch:
-    print("No hay más videos para procesar.")
+if not batch_to_process:
+    print("Nada que procesar.")
     exit()
 
-# 3. Configurar Selenium
+# Selenium Setup
 options = Options()
 options.add_argument('--headless')
 options.add_argument('--no-sandbox')
@@ -110,46 +91,52 @@ prefs = {"profile.managed_default_content_settings.images": 2}
 options.add_experimental_option("prefs", prefs)
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
-# 4. Bucle de procesamiento
-for row in batch:
+# --- BUCLE OPTIMIZADO ---
+results_buffer = []  # Aquí guardamos temporalmente (estado, fecha, id)
+processed_count = 0
+
+for row in batch_to_process:
     curr_id = row["id"]
     idok = row["idok"]
-    titulo = row["titulo"][:35]
     url = f'https://ok.ru/videoembed/{idok}?autoplay=0&quality=lowest'
     
-    status_db = ""        
-    status_log = "OK"  
+    status_db = ""
+    status_log = "OK"
     
     try:
         driver.get(url)
-        time.sleep(3)
+        # time.sleep(3) # Tiempo de carga de la página
         
         stubs = driver.find_elements(By.CLASS_NAME, 'vp_video_stub_txt')
         if stubs:
             stext_ru = stubs[0].text
             status_map = {
                 "Видео заблокировано из-за нарушений авторских прав": "Bloqueado: Copyright",
-                "Видео заблокировано по требованию правообладателя": "Bloqueado: Copyright",
                 "Видео заблокировано": "Bloqueado: General",
-                "Автор данного видео не найден или заблокирован": "Bloqueado: Autor",
-                "Видео не найдено": "Eliminado: No encontrado"
+                "Видео не найдено": "Eliminado: No encontrado",
+                "Автор данного видео не найден или заблокирован": "Bloqueado: Autor"
             }
-            status_db = status_map.get(stext_ru, f"{stext_ru[:50]}")
-            status_log = f"{status_db}" 
-            logging.info(f"ID {curr_id} detectado como {status_db}")
+            status_db = status_map.get(stext_ru, f"{stext_ru[:20]}")
+            status_log = f"{status_db}"
         
-        # ACTUALIZACIÓN EN DB: Siempre enviamos el ID, el estado (vacío o error) y la fecha se genera dentro
-        update_video_status(curr_id, status_db)
+        # Guardar en el buffer (siempre, para actualizar la fecha)
+        results_buffer.append((status_db, get_curdate_time(), curr_id))
+        processed_count += 1
         
-        # Actualizar el punto de control para la siguiente tanda
-        update_checkpoint(curr_id)
-        
-        # Print detallado para GitHub Actions
         print(f"ID: {curr_id} | {get_curdate_time()} | Status: {status_log} | Title: {titulo} ")
 
+        # ¿Es momento de sincronizar con la DB?
+        if len(results_buffer) >= BATCH_SIZE:
+            commit_batch(results_buffer, curr_id)
+            results_buffer = [] # Limpiar buffer después de commit
+
     except Exception as e:
-        print(f"Error procesando ID {curr_id}: {str(e)[:50]}")
-        break 
+        print(f"Fallo en ID {curr_id}: {e}")
+        break
+
+# Sincronización final (para los videos restantes que no completaron un lote de 10)
+if results_buffer:
+    commit_batch(results_buffer, results_buffer[-1][2])
 
 driver.quit()
-print(f"--- TANDA DE {len(batch)} VIDEOS FINALIZADA ---")
+print(f"--- FIN: {processed_count} videos revisados ---")
