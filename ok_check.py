@@ -73,10 +73,21 @@ def commit_batch(results_list, last_id_to_save):
         print(f"Error al sincronizar con la DB: {e}")
 
 # --- INICIO ---
-
 raw_id = get_config_value('last_id_check')
 last_id = int(raw_id) if raw_id is not None else 0
 limit_val = int(get_config_value('limit_check') or 100)
+
+if last_id == 0:
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    # Buscamos el ID más alto de la tabla
+    cursor.execute("SELECT MAX(id) as max_id FROM videos2024")
+    res = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    # Le sumamos 1 para que el primer lote (id < last_id) incluya al video más nuevo
+    last_id = (res['max_id'] + 1) if res['max_id'] else 0
+    print(f"--- INICIANDO DESDE EL TOPE DE LA TABLA: ID {last_id} ---")
 
 conn = get_db_connection()
 cursor = conn.cursor(dictionary=True)
