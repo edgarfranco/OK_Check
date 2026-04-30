@@ -32,6 +32,7 @@ def get_curdate_time():
     return datetime.now(tz_bogota).strftime('%Y-%m-%d %H:%M:%S')
 
 def get_config_value(key):
+    """Obtiene un valor de la tabla config"""
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     cursor.execute("SELECT valor FROM config WHERE variable = %s", (key,))
@@ -41,11 +42,10 @@ def get_config_value(key):
     return result['valor'] if result else None
 
 def update_video_status(video_id, estado):
-    """Actualiza estado y fecha en la base de datos"""
+    """Actualiza estado y fecha de Colombia en la base de datos"""
     fecha_colombia = get_curdate_time()
     conn = get_db_connection()
     cursor = conn.cursor()
-    # SQL que actualiza ambas columnas
     sql = "UPDATE videos2024 SET estado = %s, fecha = %s WHERE id = %s"
     cursor.execute(sql, (estado, fecha_colombia, video_id))
     conn.commit()
@@ -53,6 +53,7 @@ def update_video_status(video_id, estado):
     conn.close()
 
 def update_checkpoint(new_id):
+    """Actualiza el last_id_check en la tabla config"""
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("UPDATE config SET valor = %s WHERE variable = 'last_id_check'", (str(new_id),))
@@ -63,13 +64,19 @@ def update_checkpoint(new_id):
 # --- PROCESO PRINCIPAL ---
 
 try:
+    # 1. Obtener parámetros de la tabla 'config'
     raw_id = get_config_value('last_id_check')
     last_id = int(raw_id) if raw_id is not None else 0
+    
+    raw_limit = get_config_value('limit_check')
+    limit_val = int(raw_limit) if raw_limit is not None else 100 # Default a 100 si no existe
+    
+    print(f"--- Lote configurado: {limit_val} videos ---")
 except Exception as e:
-    print(f"Error de conexión inicial: {e}")
+    print(f"Error al obtener configuración inicial: {e}")
     exit(1)
 
-# Lógica para empezar desde arriba si last_id es 0
+# Lógica para empezar desde arriba si es la primera vez
 if last_id == 0:
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -80,20 +87,21 @@ if last_id == 0:
     conn.close()
     print(f"--- INICIANDO DESDE EL TOPE: ID {last_id} ---")
 
-# Obtenemos los videos a procesar
+# 2. Consultar videos usando el LIMIT parametrizado
 conn = get_db_connection()
 cursor = conn.cursor(dictionary=True)
-sql = "SELECT id, idok, titulo FROM videos2024 WHERE id < %s AND estado = '' ORDER BY id DESC LIMIT 100"
-cursor.execute(sql, (last_id,))
+# Usamos el valor de limit_val obtenido de la DB
+sql = "SELECT id, idok, titulo FROM videos2024 WHERE id < %s AND estado = '' ORDER BY id DESC LIMIT %s"
+cursor.execute(sql, (last_id, limit_val))
 batch = cursor.fetchall()
 cursor.close()
 conn.close()
 
 if not batch:
-    print("No hay videos pendientes para procesar.")
+    print("No hay más videos para procesar.")
     exit()
 
-# Configuración Selenium
+# 3. Configurar Selenium
 options = Options()
 options.add_argument('--headless')
 options.add_argument('--no-sandbox')
@@ -102,15 +110,15 @@ prefs = {"profile.managed_default_content_settings.images": 2}
 options.add_experimental_option("prefs", prefs)
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
+# 4. Bucle de procesamiento
 for row in batch:
     curr_id = row["id"]
     idok = row["idok"]
     titulo = row["titulo"][:35]
     url = f'https://ok.ru/videoembed/{idok}?autoplay=0&quality=lowest'
     
-    # Valores por defecto para el log
-    status_db = ""        # Si está OK, el estado en DB queda vacío
-    status_log = "OK"  # Para el print de GitHub
+    status_db = ""        
+    status_log = "ALIVE"  
     
     try:
         driver.get(url)
@@ -126,22 +134,22 @@ for row in batch:
                 "Автор данного видео не найден или заблокирован": "Bloqueado: Autor",
                 "Видео не найдено": "Eliminado: No encontrado"
             }
-            status_db = status_map.get(stext_ru, f"{stext_ru[:20]}")
-            status_log = f"{status_db}" 
-            logging.info(f"ID {curr_id} detectado como {status_db}")
+            status_db = status_map.get(stext_ru, f"Error: {stext_ru[:20]}")
+            status_log = f"DEAD ({status_db})"
+            logging.info(f"ID {curr_id} -> {status_db}")
         
-        # ACTUALIZACIÓN EN DB: Siempre enviamos el ID, el estado (vacío o error) y la fecha se genera dentro
+        # ACTUALIZACIÓN EN DB: Siempre actualizamos estado (vacío o causa) y FECHA de Colombia
         update_video_status(curr_id, status_db)
         
-        # Actualizar el punto de control para la siguiente tanda
+        # Actualizar el punto de control
         update_checkpoint(curr_id)
         
-        # Print detallado para GitHub Actions
-        print(f"ID: {curr_id} | {get_curdate_time()} | Status: {status_log} | Title: {titulo} ")
+        # Print detallado para los logs de GitHub
+        print(f"ID: {curr_id} | Status: {status_log} | Title: {titulo}... | Time: {get_curdate_time()}")
 
     except Exception as e:
         print(f"Error procesando ID {curr_id}: {str(e)[:50]}")
         break 
 
 driver.quit()
-print("--- TANDA DESCENDENTE FINALIZADA CON ÉXITO ---")
+print(f"--- TANDA DE {len(batch)} VIDEOS FINALIZADA ---")
