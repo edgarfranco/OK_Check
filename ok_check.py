@@ -145,6 +145,7 @@ for row in batch_to_process:
                     "Видео заблокировано из-за нарушений авторских прав": "Bloqueado: Copyright",
                     "Видео заблокировано": "Bloqueado: General",
                     "Видео не найдено": "Eliminado: No encontrado",
+                    "Video has not been found": "Eliminado: No encontrado",
                     "Автор данного видео не найден или заблокирован": "Bloqueado: Autor",
                     "Video has been blocked due to author's rights infingement": "Bloqueado: Autor"
                 }
