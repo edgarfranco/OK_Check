@@ -141,7 +141,7 @@ for row in batch_to_process:
                     "Видео не найдено": "Eliminado: No encontrado",
                     "Автор данного видео не найден или заблокирован": "Bloqueado: Autor"
                 }
-                status_db = status_map.get(stext_ru, f"{stext_ru[:20]}")
+                status_db = status_map.get(stext_ru, f"{stext_ru[:50]}")
                 status_log = f"DEAD ({status_db})"
             else:
                 # Se detectó .vid-card_n -> El video está bien
