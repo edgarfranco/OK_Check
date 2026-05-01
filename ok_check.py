@@ -147,7 +147,8 @@ for row in batch_to_process:
                     "Видео не найдено": "Eliminado: No encontrado",
                     "Video has not been found": "Eliminado: No encontrado",
                     "Автор данного видео не найден или заблокирован": "Bloqueado: Autor",
-                    "Video has been blocked due to author's rights infingement": "Bloqueado: Autor"
+                    "Video has been blocked due to author's rights infingement": "Bloqueado: Autor",
+                    "Во время обработки видео произошла ошибка.": "Bloqueado: Error procesamiento"
                 }
                 status_db = status_map.get(stext_ru, f"{stext_ru[:100]}")
                 status_log = f"BLOQUEADO ({status_db}) | {titulo[:30]}"
