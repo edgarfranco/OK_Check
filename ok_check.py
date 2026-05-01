@@ -11,6 +11,10 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from dotenv import load_dotenv
+
+# Cargar variables desde el archivo .env si existe
+load_dotenv()
 
 # --- CONFIGURACIÓN ---
 DB_CONFIG = {
@@ -18,12 +22,12 @@ DB_CONFIG = {
     'user': os.getenv('DB_USER'),
     'password': os.getenv('DB_PASS'),
     'database': os.getenv('DB_NAME'),
-    'connection_timeout': 30
+    'connection_timeout': 120
 }
 
 BATCH_SIZE = 20 # Sincronizamos con la DB cada 20 videos procesados
 
-logging.basicConfig(filename="OK_Check.log", level=logging.INFO, format="%(asctime)s: %(message)s", encoding='utf-8')
+logging.basicConfig(filename="OK_Check.log", level=logging.INFO, format="%(asctime)s: %(message)s", encoding='utf-8', filemode = "w")
 
 def get_db_connection():
     return mysql.connector.connect(**DB_CONFIG)
@@ -107,6 +111,7 @@ options.add_argument('--no-sandbox')
 options.add_argument('--disable-dev-shm-usage')
 prefs = {"profile.managed_default_content_settings.images": 2}
 options.add_experimental_option("prefs", prefs)
+options.page_load_strategy = 'eager'
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
 # Buffer de memoria
@@ -116,6 +121,7 @@ processed_count = 0
 for row in batch_to_process:
     curr_id = row["id"]
     idok = row["idok"]
+    titulo = row["titulo"]
     url = f'https://ok.ru/videoembed/{idok}?autoplay=0&quality=lowest'
     
     status_db = ""
@@ -143,7 +149,7 @@ for row in batch_to_process:
                     "Video has been blocked due to author's rights infingement": "Bloqueado: Autor"
                 }
                 status_db = status_map.get(stext_ru, f"{stext_ru[:100]}")
-                status_log = f"BLOQUEADO ({status_db})"
+                status_log = f"BLOQUEADO ({status_db}) | {titulo[:30]}"
             else:
                 # Se detectó .vid-card_n -> El video está bien
                 status_db = ""
@@ -158,6 +164,7 @@ for row in batch_to_process:
         processed_count += 1
         
         print(f"ID: {curr_id} | {get_curdate_time()}  | {status_log}")
+        logging.info(f"ID: {curr_id} | {get_curdate_time()}  | {status_log}")
 
         if len(results_buffer) >= BATCH_SIZE:
             commit_batch(results_buffer, curr_id)
