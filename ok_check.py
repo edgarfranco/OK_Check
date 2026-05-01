@@ -139,10 +139,11 @@ for row in batch_to_process:
                     "Видео заблокировано из-за нарушений авторских прав": "Bloqueado: Copyright",
                     "Видео заблокировано": "Bloqueado: General",
                     "Видео не найдено": "Eliminado: No encontrado",
-                    "Автор данного видео не найден или заблокирован": "Bloqueado: Autor"
+                    "Автор данного видео не найден или заблокирован": "Bloqueado: Autor",
+                    "Video has been blocked due to author's rights infingement": "Bloqueado: Autor"
                 }
-                status_db = status_map.get(stext_ru, f"{stext_ru[:50]}")
-                status_log = f"DEAD ({status_db})"
+                status_db = status_map.get(stext_ru, f"{stext_ru[:100]}")
+                status_log = f"BLOQUEADO ({status_db})"
             else:
                 # Se detectó .vid-card_n -> El video está bien
                 status_db = ""
