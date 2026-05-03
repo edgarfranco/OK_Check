@@ -144,6 +144,8 @@ for row in batch_to_process:
                 status_map = {
                     "Видео заблокировано из-за нарушений авторских прав": "Bloqueado: Copyright",
                     "Видео заблокировано": "Bloqueado: General",
+                    "The video is blocked": "Bloqueado: General",
+                    "This video is not available in your region": "Bloqueado: Region",
                     "Видео не найдено": "Eliminado: No encontrado",
                     "Video has not been found": "Eliminado: No encontrado",
                     "Автор данного видео не найден или заблокирован": "Bloqueado: Autor",
