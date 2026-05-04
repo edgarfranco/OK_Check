@@ -22,7 +22,7 @@ DB_CONFIG = {
     'user': os.getenv('DB_USER'),
     'password': os.getenv('DB_PASS'),
     'database': os.getenv('DB_NAME'),
-    'connection_timeout': 120
+    'connection_timeout': 60
 }
 
 BATCH_SIZE = 20 # Sincronizamos con la DB cada 20 videos procesados
