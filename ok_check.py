@@ -29,8 +29,19 @@ BATCH_SIZE = 20 # Sincronizamos con la DB cada 20 videos procesados
 
 logging.basicConfig(filename="OK_Check.log", level=logging.INFO, format="%(asctime)s: %(message)s", encoding='utf-8', filemode = "w")
 
-def get_db_connection():
-    return mysql.connector.connect(**DB_CONFIG)
+def get_db_connection(retries=3, delay=5):
+    """Intenta conectar a la DB con un sistema de reintentos"""
+    for i in range(retries):
+        try:
+            return mysql.connector.connect(**DB_CONFIG)
+        except mysql.connector.Error as err:
+            if i < retries - 1: # Si no es el último intento
+                print(f"⚠️ Intento {i+1} fallido (Error: {err}). Reintentando en {delay}s...")
+                logging.error(f"⚠️ Intento {i+1} fallido (Error: {err}). Reintentando en {delay}s...")
+                time.sleep(delay)
+            else:
+                logging.error(f"❌ Error definitivo tras {retries} intentos: {err}")
+                raise err # Lanza el error si ya agotó los reintentos
 
 def get_curdate_time():
     return datetime.now(pytz.timezone('America/Bogota')).strftime('%Y-%m-%d %H:%M:%S')
