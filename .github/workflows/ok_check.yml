@@ -33,7 +33,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: 4. Ejecutar el script de verificación
-        run: python ok_check.py
+        run: python ok_check.py -u
 
       - name: 5. Guardar Logs en caso de error o éxito
         if: always() # Se ejecuta aunque el script falle
