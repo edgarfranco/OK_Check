@@ -33,7 +33,12 @@ def get_db_connection(retries=3, delay=5):
     """Intenta conectar a la DB con un sistema de reintentos"""
     for i in range(retries):
         try:
-            return mysql.connector.connect(**DB_CONFIG)
+            conn = mysql.connector.connect(**DB_CONFIG)
+            
+            msg = f"✅ Conexión exitosa a la DB (Intento {i+1}/{retries})"
+            print(msg)
+            logging.info(msg) 
+            return conn
         except mysql.connector.Error as err:
             if i < retries - 1: # Si no es el último intento
                 print(f"⚠️ Intento {i+1} fallido (Error: {err}). Reintentando en {delay}s...")
@@ -90,7 +95,7 @@ def commit_batch(results_list, last_id_to_save):
 # --- INICIO ---
 raw_id = get_config_value('last_id_check')
 last_id = int(raw_id) if raw_id is not None else 0
-limit_val = int(get_config_value('limit_check') or 100)
+limit_val = int(get_config_value('limit_check') or 1000)
 
 if last_id == 0:
     conn = get_db_connection()
