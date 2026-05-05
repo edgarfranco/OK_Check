@@ -98,7 +98,7 @@ raw_id = get_config_value('last_id_check')
 last_id = int(raw_id) if raw_id is not None else 0
 limit_val = int(get_config_value('limit_check') or 1000)
 
-if last_id == 0:
+if last_id <= 1:
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     # Buscamos el ID más alto de la tabla
