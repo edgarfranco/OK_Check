@@ -29,24 +29,25 @@ BATCH_SIZE = 20 # Sincronizamos con la DB cada 20 videos procesados
 
 logging.basicConfig(filename="OK_Check.log", level=logging.INFO, format="%(asctime)s: %(message)s", encoding='utf-8', filemode = "w")
 
-def get_db_connection(retries=3, delay=5):
-    """Intenta conectar a la DB con un sistema de reintentos"""
+# Lanza el error si ya agotó los reintentos
+def get_db_connection(retries=5, delay=10): # Subimos a 5 intentos y base de 10s
+    """Intenta conectar con espera exponencial (10s, 20s, 40s...)"""
     for i in range(retries):
         try:
             conn = mysql.connector.connect(**DB_CONFIG)
-            
-            msg = f"✅ Conexión exitosa a la DB (Intento {i+1}/{retries})"
-            print(msg)
-            logging.info(msg) 
+            if i > 0:
+                print(f"✅ Conexión recuperada en el intento {i+1}")
             return conn
         except mysql.connector.Error as err:
-            if i < retries - 1: # Si no es el último intento
-                print(f"⚠️ Intento {i+1} fallido (Error: {err}). Reintentando en {delay}s...")
-                logging.error(f"⚠️ Intento {i+1} fallido (Error: {err}). Reintentando en {delay}s...")
-                time.sleep(delay)
+            wait_time = delay * (2 ** i) # El tiempo se duplica en cada fallo
+            if i < retries - 1:
+                msg = f"⚠️ Intento {i+1} fallido (Error: {err}). Reintentando en {wait_time}s..."
+                print(msg)
+                logging.error(msg)
+                time.sleep(wait_time)
             else:
                 logging.error(f"❌ Error definitivo tras {retries} intentos: {err}")
-                raise err # Lanza el error si ya agotó los reintentos
+                raise err
 
 def get_curdate_time():
     return datetime.now(pytz.timezone('America/Bogota')).strftime('%Y-%m-%d %H:%M:%S')
