@@ -74,7 +74,7 @@ def send_whatsapp_report(servicio, mensaje):
 
     if api_url:
         mensaje = f"🌐 *Servicio:* {servicio}\n" \
-                  f"🗨️ *Mensaje:* {mensaje}\n" \
+                  f"📫 *Mensaje:* {mensaje}\n" \
                   f"🕒 *Hora:* {get_curdate_time()}"
         
         # Codificar el texto para URL
