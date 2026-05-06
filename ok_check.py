@@ -83,8 +83,11 @@ def send_whatsapp_report(servicio, mensaje):
         try:
             requests.get(full_url)
             print(">>> Reporte enviado a WhatsApp.")
+            logging.info(f"✅ Reporte enviado a WhatsApp.")
         except Exception as e:
             print(f"Error enviando WhatsApp: {e}")
+            logging.error(f"❌ Error enviando reporte a WhatsApp: {e}")
+
 
 def get_curdate_time():
     return datetime.now(pytz.timezone('America/Bogota')).strftime('%Y-%m-%d %H:%M:%S')
