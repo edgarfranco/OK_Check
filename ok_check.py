@@ -22,30 +22,50 @@ DB_CONFIG = {
     'user': os.getenv('DB_USER'),
     'password': os.getenv('DB_PASS'),
     'database': os.getenv('DB_NAME'),
-    'connection_timeout': 60
+    'connection_timeout': 120,
+    'get_warnings': True
 }
 
-BATCH_SIZE = 20 # Sincronizamos con la DB cada 20 videos procesados
+BATCH_SIZE = 100 # Sincronizamos con la DB cada 20 videos procesados
 
 logging.basicConfig(filename="OK_Check.log", level=logging.INFO, format="%(asctime)s: %(message)s", encoding='utf-8', filemode = "w")
 
 # Lanza el error si ya agotó los reintentos
-def get_db_connection(retries=5, delay=10): # Subimos a 5 intentos y base de 10s
-    """Intenta conectar con espera exponencial (10s, 20s, 40s...)"""
+def get_db_connection(retries=5, delay=10):
+    """
+    Intenta conectar a la DB y verifica que la conexión esté ACTIVA.
+    Si no está activa o falla, reintenta con espera exponencial.
+    """
     for i in range(retries):
         try:
+            # 1. Intentamos la conexión
             conn = mysql.connector.connect(**DB_CONFIG)
-            if i > 0:
-                print(f"✅ Conexión recuperada en el intento {i+1}")
-            return conn
+            
+            # 2. Verificamos si la conexión está realmente viva
+            if conn.is_connected():
+                # Pequeña pausa de estabilidad (opcional pero recomendada en nubes)
+                time.sleep(1) 
+                
+                if i > 0:
+                    print(f"✅ Conexión recuperada en el intento {i+1}")
+                
+                return conn # Todo bien, entregamos la conexión
+            else:
+                # Si por alguna razón extraña no está conectada, 
+                # lanzamos un error manual para que entre al bloque 'except'
+                raise mysql.connector.Error(msg="La conexión se creó pero no está activa.")
+
         except mysql.connector.Error as err:
-            wait_time = delay * (2 ** i) # El tiempo se duplica en cada fallo
+            # 3. Lógica de reintento si algo falló
+            wait_time = delay * (2 ** i) # Espera exponencial: 10, 20, 40, 80...
+            
             if i < retries - 1:
                 msg = f"⚠️ Intento {i+1} fallido (Error: {err}). Reintentando en {wait_time}s..."
                 print(msg)
                 logging.error(msg)
                 time.sleep(wait_time)
             else:
+                # Si ya es el último intento y sigue fallando
                 logging.error(f"❌ Error definitivo tras {retries} intentos: {err}")
                 raise err
 
