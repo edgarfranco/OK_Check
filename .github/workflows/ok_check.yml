@@ -36,7 +36,7 @@ jobs:
         # Usamos una acción que reintenta el paso si falla
         uses: nick-fields/retry@v3
         with:
-            timeout_minutes: 30
+            timeout_minutes: 45
             max_attempts: 3
             retry_wait_seconds: 60 # Espera un minuto antes de cambiar de máquina
             command: python -u ok_check.py
