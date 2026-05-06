@@ -71,10 +71,11 @@ def get_db_connection(retries=5, delay=10):
 
 def send_whatsapp_report(servicio, mensaje):
     api_url = os.getenv('WHATSAPP_URL') # URL de Whatsapp en Secrets
-    logging.info(f"Obteniendo URL de WhatsApp desde configuración.")
-    
+    print(f"Obteniendo URL de WhatsApp desde configuración.")
+
     if api_url:
-        logging.info(f"Configurando mensaje de reporte WhatsApp.")
+        print(f"Configurando mensaje de reporte WhatsApp.")
+
         mensaje = f"🌐 *Servicio:* {servicio}\n" \
                   f"🗨️ *Mensaje:* {mensaje}\n" \
                   f"🕒 *Hora:* {get_curdate_time()}"
@@ -85,11 +86,9 @@ def send_whatsapp_report(servicio, mensaje):
 
         try:
             requests.get(full_url)
-            print(">>> Reporte enviado a WhatsApp.")
-            logging.info(f"✅ Reporte enviado a WhatsApp.")
+            print(f"✅ Reporte enviado a WhatsApp.")
         except Exception as e:
-            print(f"Error enviando WhatsApp: {e}")
-            logging.error(f"❌ Error enviando reporte a WhatsApp: {e}")
+            print(f"✅ ❌ Error enviando reporte a WhatsApp: {e}.")
 
 
 def get_curdate_time():
