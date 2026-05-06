@@ -44,7 +44,7 @@ def get_db_connection(retries=5, delay=10):
             # 2. Verificamos si la conexión está realmente viva
             if conn.is_connected():
                 # Pequeña pausa de estabilidad (opcional pero recomendada en nubes)
-                time.sleep(1) 
+                # time.sleep(1) 
                 
                 if i > 0:
                     print(f"✅ Conexión recuperada en el intento {i+1}")
