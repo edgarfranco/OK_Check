@@ -32,8 +32,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 4. Ejecutar el script de verificación
-        run: python -u ok_check.py
+      - name: 4. Ejecutar el script con Reintento de Job
+        # Usamos una acción que reintenta el paso si falla
+        uses: nick-fields/retry@v3
+        with:
+            timeout_minutes: 30
+            max_attempts: 3
+            retry_wait_seconds: 60 # Espera un minuto antes de cambiar de máquina
+            command: python -u ok_check.py
 
       - name: 5. Guardar Logs en caso de error o éxito
         if: always() # Se ejecuta aunque el script falle
