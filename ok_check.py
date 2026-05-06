@@ -71,7 +71,10 @@ def get_db_connection(retries=5, delay=10):
 
 def send_whatsapp_report(servicio, mensaje):
     api_url = os.getenv('WHATSAPP_URL') # URL de Whatsapp en Secrets
+    logging.info(f"Obteniendo URL de WhatsApp desde configuración.")
+    
     if api_url:
+        logging.info(f"Configurando mensaje de reporte WhatsApp.")
         mensaje = f"🌐 *Servicio:* {servicio}\n" \
                   f"🗨️ *Mensaje:* {mensaje}\n" \
                   f"🕒 *Hora:* {get_curdate_time()}"
@@ -79,7 +82,7 @@ def send_whatsapp_report(servicio, mensaje):
         # Codificar el texto para URL
         texto_encoded = urllib.parse.quote(mensaje)
         full_url = f"{api_url}&text={texto_encoded}"
-        
+
         try:
             requests.get(full_url)
             print(">>> Reporte enviado a WhatsApp.")
@@ -137,6 +140,8 @@ def commit_batch(results_list, last_id_to_save):
 raw_id = get_config_value('last_id_check')
 last_id = int(raw_id) if raw_id is not None else 0
 limit_val = int(get_config_value('limit_check') or 1000)
+
+send_whatsapp_report("ok_check", f"Servicio iniciado. Revisando videos desde ID {last_id} hacia abajo. Límite: {limit_val} videos.")
 
 if last_id <= 1:
     send_whatsapp_report("ok_check", "Reiniciando contador")
