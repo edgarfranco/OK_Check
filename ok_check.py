@@ -12,6 +12,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from dotenv import load_dotenv
+import requests
+import urllib.parse
 
 # Cargar variables desde el archivo .env si existe
 load_dotenv()
@@ -67,6 +69,23 @@ def get_db_connection(retries=5, delay=10):
                 logging.error(f"❌ Error definitivo tras {retries} intentos: {err}")
                 raise err
 
+def send_whatsapp_report(servicio, mensaje):
+    api_url = os.getenv('WHATSAPP_URL') # URL de Whatsapp en Secrets
+    if api_url:
+        mensaje = f"🌐 *Servicio:* {servicio}\n" \
+                  f"🗨️ *Mensaje:* {mensaje}\n" \
+                  f"🕒 *Hora:* {get_curdate_time()}"
+        
+        # Codificar el texto para URL
+        texto_encoded = urllib.parse.quote(mensaje)
+        full_url = f"{api_url}&text={texto_encoded}"
+        
+        try:
+            requests.get(full_url)
+            print(">>> Reporte enviado a WhatsApp.")
+        except Exception as e:
+            print(f"Error enviando WhatsApp: {e}")
+
 def get_curdate_time():
     return datetime.now(pytz.timezone('America/Bogota')).strftime('%Y-%m-%d %H:%M:%S')
 
@@ -117,6 +136,8 @@ last_id = int(raw_id) if raw_id is not None else 0
 limit_val = int(get_config_value('limit_check') or 1000)
 
 if last_id <= 1:
+    send_whatsapp_report("ok_check", "Reiniciando contador")
+
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     # Buscamos el ID más alto de la tabla
