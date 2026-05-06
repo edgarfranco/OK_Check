@@ -32,40 +32,38 @@ logging.basicConfig(filename="OK_Check.log", level=logging.INFO, format="%(ascti
 
 # Lanza el error si ya agotó los reintentos
 def get_db_connection(retries=5, delay=10):
-    """
-    Intenta conectar a la DB y verifica que la conexión esté ACTIVA.
-    Si no está activa o falla, reintenta con espera exponencial.
-    """
     for i in range(retries):
+        conn = None # Inicializamos como None para evitar errores de referencia
         try:
-            # 1. Intentamos la conexión
             conn = mysql.connector.connect(**DB_CONFIG)
             
-            # 2. Verificamos si la conexión está realmente viva
             if conn.is_connected():
-                # Pequeña pausa de estabilidad (opcional pero recomendada en nubes)
-                # time.sleep(1) 
-                
+                time.sleep(1) 
                 if i > 0:
                     print(f"✅ Conexión recuperada en el intento {i+1}")
-                
-                return conn # Todo bien, entregamos la conexión
+                return conn
             else:
-                # Si por alguna razón extraña no está conectada, 
-                # lanzamos un error manual para que entre al bloque 'except'
+                # Si existe el objeto pero no está conectado, lo cerramos antes de fallar
+                if conn:
+                    conn.close()
                 raise mysql.connector.Error(msg="La conexión se creó pero no está activa.")
 
         except mysql.connector.Error as err:
-            # 3. Lógica de reintento si algo falló
-            wait_time = delay * (2 ** i) # Espera exponencial: 10, 20, 40, 80...
-            
+            # IMPORTANTE: Si hubo un error y el objeto 'conn' existe, lo cerramos
+            # Esto limpia cualquier intento fallido antes de esperar al siguiente
+            if conn:
+                try:
+                    conn.close()
+                except:
+                    pass # Ignoramos errores al intentar cerrar algo ya roto
+
+            wait_time = delay * (2 ** i)
             if i < retries - 1:
                 msg = f"⚠️ Intento {i+1} fallido (Error: {err}). Reintentando en {wait_time}s..."
                 print(msg)
                 logging.error(msg)
                 time.sleep(wait_time)
             else:
-                # Si ya es el último intento y sigue fallando
                 logging.error(f"❌ Error definitivo tras {retries} intentos: {err}")
                 raise err
 
