@@ -160,7 +160,7 @@ for row in batch_to_process:
     url = f'https://ok.ru/videoembed/{idok}?autoplay=0&quality=lowest'
     
     status_db = ""
-    status_log = "ALIVE"
+    status_log = "OK"
     
     try:
         driver.get(url)
