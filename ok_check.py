@@ -38,7 +38,7 @@ def get_db_connection(retries=5, delay=10):
             conn = mysql.connector.connect(**DB_CONFIG)
             
             if conn.is_connected():
-                time.sleep(1) 
+                # time.sleep(1) 
                 if i > 0:
                     print(f"✅ Conexión recuperada en el intento {i+1}")
                 return conn
