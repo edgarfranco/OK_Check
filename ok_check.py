@@ -24,7 +24,7 @@ DB_CONFIG = {
     'user': os.getenv('DB_USER'),
     'password': os.getenv('DB_PASS'),
     'database': os.getenv('DB_NAME'),
-    'connection_timeout': 120,
+    'connection_timeout': 30,
     'get_warnings': True
 }
 
