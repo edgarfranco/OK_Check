@@ -33,7 +33,7 @@ BATCH_SIZE = 100 # Sincronizamos con la DB cada 20 videos procesados
 logging.basicConfig(filename="OK_Check.log", level=logging.INFO, format="%(asctime)s: %(message)s", encoding='utf-8', filemode = "w")
 
 # Lanza el error si ya agotó los reintentos
-def get_db_connection(retries=5, delay=10):
+def get_db_connection(retries=3, delay=10):
     for i in range(retries):
         conn = None # Inicializamos como None para evitar errores de referencia
         try:
@@ -59,12 +59,11 @@ def get_db_connection(retries=5, delay=10):
                 except:
                     pass # Ignoramos errores al intentar cerrar algo ya roto
 
-            wait_time = delay * (2 ** i)
             if i < retries - 1:
-                msg = f"⚠️ Intento {i+1} fallido (Error: {err}). Reintentando en {wait_time}s..."
+                msg = f"⚠️ Intento {i+1} fallido (Error: {err}). Reintentando en {delay}s..."
                 print(msg)
                 logging.error(msg)
-                time.sleep(wait_time)
+                time.sleep(delay)
             else:
                 logging.error(f"❌ Error definitivo tras {retries} intentos: {err}")
                 raise err
