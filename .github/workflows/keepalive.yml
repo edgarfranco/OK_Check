@@ -3,6 +3,7 @@ name: Keepalive
 on:
   schedule:
     - cron: '0 0 1 * *' # Se ejecuta una vez al mes
+  workflow_dispatch:
 
 jobs:
   keepalive:
