@@ -1,15 +1,24 @@
-name: Keepalive
+name: Keepalive Workflow
 
 on:
   schedule:
-    - cron: '0 0 1 * *' # Se ejecuta una vez al mes
-  workflow_dispatch:
+    - cron: '0 0 1 * *' # Se ejecuta de forma automática el primer día de cada mes
+  workflow_dispatch: # Te permite activarlo manualmente desde la web cuando quieras
 
 jobs:
   keepalive:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write # Permiso crucial para que el flujo pueda hacer commits
     steps:
-      - uses: actions/checkout@v4
-      - uses: gautamkrishnar/keepalive-workflow@v1 # Reactiva el repositorio automáticamente
+      - name: Checkout repository
+        uses: actions/checkout@v4 # Acción oficial de GitHub (Segura)
+
+      - name: Keep GitHub Actions alive
+        run: |
+          echo "Última activación: $(date)" > .github/keepalive.txt
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add .github/keepalive.txt
+          git commit -m "chore: mantener github actions activo [skip ci]" || exit 0
+          git push
