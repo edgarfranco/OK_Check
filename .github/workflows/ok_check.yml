@@ -1,9 +1,9 @@
 name: OK Video Status Checker
 
 on:
-  #schedule:
+  schedule:
     # Se ejecuta cada hora (puedes ajustarlo)
-    #- cron: '43 */1 * * *'
+    - cron: '43 */1 * * *'
   workflow_dispatch: # Permite ejecutarlo manualmente con un botón
 
 jobs:
